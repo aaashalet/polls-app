@@ -1,37 +1,44 @@
 {% extends "layout.html" %}
 {% block content %}
-<h2>Create Poll</h2>
-<form method="POST" enctype="multipart/form-data">
-  {{ form.hidden_tag() }}
+<div class="mx-auto" style="max-width: 600px;">
+  <h2 class="mb-4 text-center">Create a New Poll</h2>
+  <form method="POST" enctype="multipart/form-data" novalidate>
+    {{ form.hidden_tag() }}
 
-  <div class="mb-3">
-    {{ form.question.label(class="form-label") }}
-    {{ form.question(class="form-control") }}
-    {% for error in form.question.errors %}
-      <div class="text-danger">{{ error }}</div>
-    {% endfor %}
-  </div>
-
-  <div class="mb-3">
-    {{ form.image.label(class="form-label") }}
-    {{ form.image(class="form-control") }}
-    {% for error in form.image.errors %}
-      <div class="text-danger">{{ error }}</div>
-    {% endfor %}
-  </div>
-
-  <h5>Options</h5>
-  {% for option in form.options %}
-    <div class="mb-3">
-      <label class="form-label">Option {{ loop.index }}</label>
-      {{ option(class="form-control") }}
-      {% for error in option.errors %}
-        <div class="text-danger">{{ error }}</div>
+    <div class="mb-4">
+      {{ form.question.label(class="form-label fw-semibold") }}
+      {{ form.question(class="form-control form-control-lg", placeholder="Type your poll question here...") }}
+      {% for error in form.question.errors %}
+        <div class="text-danger small mt-1">{{ error }}</div>
       {% endfor %}
     </div>
-  {% endfor %}
 
-  <button type="submit" name="add_option" value="1" class="btn btn-secondary">Add Option</button>
-  <button type="submit" name="submit" value="1" class="btn btn-success">Create Poll</button>
-</form>
+    <div class="mb-4">
+      {{ form.image.label(class="form-label fw-semibold") }}
+      {{ form.image(class="form-control") }}
+      <div class="form-text">Optional. Upload an image for your poll.</div>
+      {% for error in form.image.errors %}
+        <div class="text-danger small mt-1">{{ error }}</div>
+      {% endfor %}
+    </div>
+
+    <h5 class="mb-3">Options</h5>
+    <small class="text-muted d-block mb-3">At least 2 options. Add more if needed.</small>
+
+    {% for option in form.options %}
+      <div class="mb-3">
+        <label class="form-label">Option {{ loop.index }}</label>
+        {{ option(class="form-control", placeholder="Option text") }}
+        {% for error in option.errors %}
+          <div class="text-danger small mt-1">{{ error }}</div>
+        {% endfor %}
+      </div>
+    {% endfor %}
+
+    <div class="d-flex justify-content-between">
+      <button type="submit" name="add_option" class="btn btn-outline-secondary">+ Add Option</button>
+      <button type="submit" name="submit" class="btn btn-primary">Create Poll</button>
+    </div>
+  </form>
+</div>
 {% endblock %}
