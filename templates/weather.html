@@ -1,0 +1,27 @@
+{% extends "layout.html" %}
+
+{% block content %}
+  <h2>Weather Forecast</h2>
+
+  <form method="POST" action="{{ url_for('weather') }}" class="mb-4">
+    <div class="input-group">
+      <input type="text" name="city" class="form-control" placeholder="Enter city" required>
+      <button type="submit" class="btn btn-primary">Get Weather</button>
+    </div>
+  </form>
+
+  {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
+
+  {% if weather %}
+    <div class="card" style="max-width: 300px;">
+      <div class="card-body text-center">
+        <h3>{{ weather.city }}</h3>
+        <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@2x.png" alt="Weather icon">
+        <h4>{{ weather.temp }}°C</h4>
+        <p>{{ weather.description }}</p>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}

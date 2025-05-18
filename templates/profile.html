@@ -3,17 +3,30 @@
 {% block content %}
   <h2>User Profile</h2>
 
-  <!-- Avatar -->
-  <div class="mb-4">
+  <div class="mb-4 d-flex align-items-center">
     {% if current_user.avatar_filename %}
-      <img src="{{ url_for('static', filename='uploads/' ~ current_user.avatar_filename) }}" class="avatar" alt="Avatar">
+      <img src="{{ url_for('static', filename='uploads/' ~ current_user.avatar_filename) }}" class="avatar me-3" alt="Avatar" style="width:80px; height:80px;">
     {% else %}
-      <img src="https://via.placeholder.com/40" class="avatar" alt="Avatar">
+      <img src="https://via.placeholder.com/80" class="avatar me-3" alt="Avatar" style="width:80px; height:80px;">
     {% endif %}
-    <span>{{ current_user.username }}</span>
+    <span style="font-size: 1.25rem; font-weight: 600;">{{ current_user.username }}</span>
   </div>
 
-  <!-- Change Password Form -->
+  <h4>Upload Avatar</h4>
+  <form method="POST" enctype="multipart/form-data" class="mb-4">
+    {{ avatar_form.hidden_tag() }}
+
+    <div class="mb-3">
+      {{ avatar_form.avatar.label(class="form-label") }}
+      {{ avatar_form.avatar(class="form-control") }}
+      {% for error in avatar_form.avatar.errors %}
+        <div class="text-danger">{{ error }}</div>
+      {% endfor %}
+    </div>
+
+    <button type="submit" name="upload_avatar" class="btn btn-primary">{{ avatar_form.submit.label.text }}</button>
+  </form>
+
   <h4>Change Password</h4>
   <form method="POST">
     {{ pwd_form.hidden_tag() }}
@@ -42,16 +55,15 @@
       {% endfor %}
     </div>
 
-    <button type="submit" class="btn btn-primary">{{ pwd_form.submit.label.text }}</button>
+    <button type="submit" name="change_password" class="btn btn-primary">{{ pwd_form.submit.label.text }}</button>
   </form>
 
-  <!-- Polls Voted -->
   <hr>
   <h4>Polls You've Voted In</h4>
   {% if polls_voted %}
     <ul class="list-group">
       {% for poll, option_text in polls_voted.items() %}
-        <li class="list-group-item">
+        <li class="list-group-item d-flex justify-content-between align-items-center">
           <a href="{{ url_for('poll_detail', poll_id=poll.id) }}">{{ poll.question }}</a>
           <span class="badge bg-secondary">{{ option_text }}</span>
         </li>
