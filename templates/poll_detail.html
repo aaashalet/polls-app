@@ -1,29 +1,29 @@
 {% extends "layout.html" %}
-{% block content %}
-<h2>{{ poll.question }}</h2>
-{% if poll.image_filename %}
-  <img src="{{ url_for('static', filename='uploads/' ~ poll.image_filename) }}" alt="Poll Image">
-{% endif %}
 
-{% if voted %}
-  <h4>Results:</h4>
-  <ul class="list-group mb-3">
+{% block content %}
+  <h2>{{ poll.question }}</h2>
+
+  {% if poll.image_filename %}
+    <img src="{{ url_for('static', filename='uploads/' ~ poll.image_filename) }}" class="img-fluid" alt="Poll Image">
+  {% endif %}
+
+  <h4>Options</h4>
+  <ul class="list-group">
     {% for option in poll.options %}
-      <li class="list-group-item d-flex justify-content-between align-items-center">
+      <li class="list-group-item d-flex justify-content-between">
         {{ option.text }}
         <span class="badge bg-primary rounded-pill">
           {{ votes_count.get(option.id, 0) }} votes
-          ({{ '%.1f' % ((votes_count.get(option.id, 0) / total_votes * 100) if total_votes else 0) }}%)
         </span>
       </li>
     {% endfor %}
   </ul>
 
   {% if chart_filename %}
-    <h5>Graph:</h5>
-    <img src="{{ url_for('static', filename='graphs/' ~ chart_filename) }}" alt="Poll Results Graph" class="img-fluid mb-3">
+    <h5>Graph</h5>
+    <img src="{{ url_for('static', filename='graphs/' ~ chart_filename) }}" alt="Poll Results Graph" class="img-fluid">
   {% endif %}
-{% else %}
+  
   <form method="POST">
     {% for option in poll.options %}
       <div class="form-check">
@@ -35,7 +35,6 @@
     {% endfor %}
     <button type="submit" class="btn btn-primary mt-3">Vote</button>
   </form>
-{% endif %}
 
-<a href="{{ url_for('index') }}" class="btn btn-secondary mt-3">Back to Polls</a>
+  <a href="{{ url_for('index') }}" class="btn btn-secondary mt-3">Back to Polls</a>
 {% endblock %}
