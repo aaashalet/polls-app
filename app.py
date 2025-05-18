@@ -1,5 +1,4 @@
 import os
-import matplotlib.pyplot as plt
 from flask import Flask, render_template, redirect, url_for, flash, request, abort
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user, UserMixin
@@ -10,8 +9,8 @@ from wtforms import StringField, PasswordField, SubmitField, FieldList
 from wtforms.validators import DataRequired, Length, EqualTo, ValidationError
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
+import matplotlib.pyplot as plt
 
-# Конфигурация загрузки файлов
 UPLOAD_FOLDER = os.path.join('static', 'uploads')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
@@ -30,12 +29,12 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-# Модели
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
+    avatar_filename = db.Column(db.String(300), nullable=True)
     votes = db.relationship('Vote', backref='user', lazy=True)
 
     def set_password(self, password):
@@ -81,7 +80,6 @@ def admin_required(f):
     return decorated_function
 
 
-# Формы
 class RegistrationForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired(), Length(min=3, max=150)])
     password = PasswordField('Password', validators=[DataRequired(), Length(min=6)])
@@ -100,10 +98,22 @@ class LoginForm(FlaskForm):
     submit = SubmitField('Login')
 
 
+class PasswordChangeForm(FlaskForm):
+    old_password = PasswordField('Current password', validators=[DataRequired()])
+    new_password = PasswordField('New password', validators=[DataRequired(), Length(min=6)])
+    new_password2 = PasswordField('Repeat new password', validators=[DataRequired(), EqualTo('new_password')])
+    submit = SubmitField('Change password')
+
+
+class AvatarUploadForm(FlaskForm):
+    avatar = FileField('Upload Avatar', validators=[FileAllowed(ALLOWED_EXTENSIONS, 'Images only!')])
+    submit = SubmitField('Upload')
+
+
 class PollForm(FlaskForm):
     question = StringField('Question', validators=[DataRequired(), Length(max=500)])
     image = FileField('Image', validators=[FileAllowed(ALLOWED_EXTENSIONS, 'Images only!')])
-    options = FieldList(StringField('Option', validators=[DataRequired(), Length(max=200)]), min_entries=2, max_entries=5)
+    options = FieldList(StringField('Option', validators=[DataRequired(), Length(max=200)]), min_entries=2)
     submit = SubmitField('Create Poll')
 
 
@@ -131,7 +141,6 @@ def create_poll_chart(poll):
     return filename
 
 
-# Роуты
 @app.route('/')
 def index():
     polls = Poll.query.all()
@@ -146,7 +155,7 @@ def register():
         user.set_password(form.password.data)
         db.session.add(user)
         db.session.commit()
-        flash('Registered successfully! Please log in.')
+        flash('Registered successfully! Please log in.', 'success')
         return redirect(url_for('login'))
     return render_template('register.html', form=form)
 
@@ -158,10 +167,10 @@ def login():
         user = User.query.filter_by(username=form.username.data).first()
         if user and user.check_password(form.password.data):
             login_user(user)
-            flash('Logged in successfully!')
+            flash('Logged in successfully!', 'success')
             return redirect(url_for('index'))
         else:
-            flash('Invalid username or password.')
+            flash('Invalid username or password.', 'danger')
     return render_template('login.html', form=form)
 
 
@@ -169,34 +178,83 @@ def login():
 @login_required
 def logout():
     logout_user()
-    flash('Logged out.')
+    flash('Logged out.', 'info')
     return redirect(url_for('index'))
+
+
+@app.route('/profile', methods=['GET', 'POST'])
+@login_required
+def profile():
+    pwd_form = PasswordChangeForm()
+    avatar_form = AvatarUploadForm()
+
+    if pwd_form.validate_on_submit() and 'change_password' in request.form:
+        if not current_user.check_password(pwd_form.old_password.data):
+            flash('Current password is incorrect.', 'danger')
+        else:
+            current_user.set_password(pwd_form.new_password.data)
+            db.session.commit()
+            flash('Password updated successfully.', 'success')
+            return redirect(url_for('profile'))
+
+    if avatar_form.validate_on_submit() and 'upload_avatar' in request.form:
+        if avatar_form.avatar.data:
+            file = avatar_form.avatar.data
+            if allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                current_user.avatar_filename = filename
+                db.session.commit()
+                flash('Avatar uploaded successfully!', 'success')
+                return redirect(url_for('profile'))
+            else:
+                flash('Invalid file format.', 'danger')
+
+    votes = Vote.query.filter_by(user_id=current_user.id).all()
+    polls_voted = {}
+    for vote in votes:
+        poll = Poll.query.get(vote.poll_id)
+        if poll:
+            polls_voted[poll] = vote.option.text
+
+    return render_template('profile.html', pwd_form=pwd_form, avatar_form=avatar_form, polls_voted=polls_voted)
 
 
 @app.route('/create', methods=['GET', 'POST'])
 @login_required
 def create_poll():
     form = PollForm()
-    if form.validate_on_submit():
-        filename = None
-        if form.image.data:
-            file = form.image.data
-            if allowed_file(file.filename):
-                filename = secure_filename(file.filename)
-                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-            else:
-                flash('Invalid image format.')
-                return redirect(request.url)
 
-        poll = Poll(question=form.question.data, image_filename=filename)
-        db.session.add(poll)
-        db.session.commit()
-        for option_text in form.options.data:
-            option = Option(text=option_text, poll_id=poll.id)
-            db.session.add(option)
-        db.session.commit()
-        flash('Poll created!')
-        return redirect(url_for('index'))
+    if request.method == 'POST':
+        if 'add_option' in request.form:
+            form.options.append_entry()
+            return render_template('create_poll.html', form=form)
+
+        if form.validate_on_submit():
+            filename = None
+            if form.image.data:
+                file = form.image.data
+                if allowed_file(file.filename):
+                    filename = secure_filename(file.filename)
+                    file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                else:
+                    flash('Invalid image format.', 'danger')
+                    return redirect(request.url)
+
+            poll = Poll(question=form.question.data, image_filename=filename)
+            db.session.add(poll)
+            db.session.commit()
+            for option_text in form.options.data:
+                option = Option(text=option_text, poll_id=poll.id)
+                db.session.add(option)
+            db.session.commit()
+            flash('Poll created!')
+            return redirect(url_for('index'))
+
+    if len(form.options) == 0:
+        for _ in range(2):
+            form.options.append_entry()
+
     return render_template('create_poll.html', form=form)
 
 
@@ -215,7 +273,7 @@ def poll_detail(poll_id):
             flash('Vote submitted!')
             return redirect(url_for('poll_detail', poll_id=poll_id))
         else:
-            flash('Invalid option.')
+            flash('Invalid option.', 'danger')
     votes_count = {option.id: len(option.votes) for option in poll.options}
     total_votes = sum(votes_count.values())
 
@@ -226,7 +284,6 @@ def poll_detail(poll_id):
     return render_template('poll_detail.html', poll=poll, voted=voted, votes_count=votes_count, total_votes=total_votes, chart_filename=chart_filename)
 
 
-# Админка
 @app.route('/admin')
 @admin_required
 def admin_index():
@@ -248,7 +305,7 @@ def admin_delete_poll(poll_id):
     Option.query.filter_by(poll_id=poll.id).delete()
     db.session.delete(poll)
     db.session.commit()
-    flash('Poll deleted.')
+    flash('Poll deleted.', 'success')
     return redirect(url_for('admin_polls'))
 
 
@@ -266,7 +323,7 @@ def admin_delete_user(user_id):
     Vote.query.filter_by(user_id=user.id).delete()
     db.session.delete(user)
     db.session.commit()
-    flash('User deleted.')
+    flash('User deleted.', 'success')
     return redirect(url_for('admin_users'))
 
 

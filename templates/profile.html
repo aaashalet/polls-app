@@ -1,0 +1,74 @@
+{% extends "layout.html" %}
+{% block content %}
+<h2>User Profile</h2>
+
+{% if current_user.avatar_filename %}
+  <img src="{{ url_for('static', filename='uploads/' ~ current_user.avatar_filename) }}" alt="Avatar" class="rounded-circle mb-3" style="width:100px; height:100px; object-fit:cover;">
+{% endif %}
+
+<p><strong>Username:</strong> {{ current_user.username }}</p>
+
+<h3>Change Password</h3>
+<form method="POST">
+  {{ pwd_form.hidden_tag() }}
+
+  <div class="mb-3">
+    {{ pwd_form.old_password.label(class="form-label") }}
+    {{ pwd_form.old_password(class="form-control") }}
+    {% for error in pwd_form.old_password.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+
+  <div class="mb-3">
+    {{ pwd_form.new_password.label(class="form-label") }}
+    {{ pwd_form.new_password(class="form-control") }}
+    {% for error in pwd_form.new_password.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+
+  <div class="mb-3">
+    {{ pwd_form.new_password2.label(class="form-label") }}
+    {{ pwd_form.new_password2(class="form-control") }}
+    {% for error in pwd_form.new_password2.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+
+  <button type="submit" name="change_password" class="btn btn-primary">{{ pwd_form.submit.label.text }}</button>
+</form>
+
+<hr>
+
+<h3>Upload Avatar</h3>
+<form method="POST" enctype="multipart/form-data">
+  {{ avatar_form.hidden_tag() }}
+
+  <div class="mb-3">
+    {{ avatar_form.avatar.label(class="form-label") }}
+    {{ avatar_form.avatar(class="form-control") }}
+    {% for error in avatar_form.avatar.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+
+  <button type="submit" name="upload_avatar" class="btn btn-primary">{{ avatar_form.submit.label.text }}</button>
+</form>
+
+<hr>
+
+<h3>Polls You Voted In</h3>
+{% if polls_voted %}
+  <ul class="list-group">
+    {% for poll, option_text in polls_voted.items() %}
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        <a href="{{ url_for('poll_detail', poll_id=poll.id) }}">{{ poll.question }}</a>
+        <span class="badge bg-secondary">{{ option_text }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p>You have not voted in any polls yet.</p>
+{% endif %}
+{% endblock %}

@@ -2,7 +2,7 @@
 {% block content %}
 <h2>{{ poll.question }}</h2>
 {% if poll.image_filename %}
-  <img src="{{ url_for('static', filename='uploads/' ~ poll.image_filename) }}" alt="Poll Image" class="img-fluid mb-3" style="max-height:300px;">
+  <img src="{{ url_for('static', filename='uploads/' ~ poll.image_filename) }}" alt="Poll Image">
 {% endif %}
 
 {% if voted %}

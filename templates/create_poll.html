@@ -3,6 +3,7 @@
 <h2>Create Poll</h2>
 <form method="POST" enctype="multipart/form-data">
   {{ form.hidden_tag() }}
+
   <div class="mb-3">
     {{ form.question.label(class="form-label") }}
     {{ form.question(class="form-control") }}
@@ -10,7 +11,7 @@
       <div class="text-danger">{{ error }}</div>
     {% endfor %}
   </div>
-  
+
   <div class="mb-3">
     {{ form.image.label(class="form-label") }}
     {{ form.image(class="form-control") }}
@@ -22,13 +23,15 @@
   <h5>Options</h5>
   {% for option in form.options %}
     <div class="mb-3">
-      {{ option.label }} {{ loop.index }}
+      <label class="form-label">Option {{ loop.index }}</label>
       {{ option(class="form-control") }}
       {% for error in option.errors %}
         <div class="text-danger">{{ error }}</div>
       {% endfor %}
     </div>
   {% endfor %}
-  <button type="submit" class="btn btn-success">{{ form.submit.label.text }}</button>
+
+  <button type="submit" name="add_option" value="1" class="btn btn-secondary">Add Option</button>
+  <button type="submit" name="submit" value="1" class="btn btn-success">Create Poll</button>
 </form>
 {% endblock %}

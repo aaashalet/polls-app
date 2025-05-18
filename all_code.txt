@@ -1,0 +1,517 @@
+import os
+import matplotlib.pyplot as plt
+from flask import Flask, render_template, redirect, url_for, flash, request, abort
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, login_user, login_required, logout_user, current_user, UserMixin
+from flask_wtf import FlaskForm
+from flask_wtf.file import FileField, FileAllowed
+from werkzeug.utils import secure_filename
+from wtforms import StringField, PasswordField, SubmitField, FieldList
+from wtforms.validators import DataRequired, Length, EqualTo, ValidationError
+from werkzeug.security import generate_password_hash, check_password_hash
+from functools import wraps
+
+# Конфигурация загрузки файлов
+UPLOAD_FOLDER = os.path.join('static', 'uploads')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'your_secret_key_here'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///polls.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+db = SQLAlchemy(app)
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'
+
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+# Модели
+class User(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(150), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    is_admin = db.Column(db.Boolean, default=False)
+    votes = db.relationship('Vote', backref='user', lazy=True)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+
+class Poll(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    question = db.Column(db.String(500), nullable=False)
+    image_filename = db.Column(db.String(300))
+    options = db.relationship('Option', backref='poll', lazy=True)
+    votes = db.relationship('Vote', backref='poll', lazy=True)
+
+
+class Option(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    text = db.Column(db.String(200), nullable=False)
+    poll_id = db.Column(db.Integer, db.ForeignKey('poll.id'), nullable=False)
+    votes = db.relationship('Vote', backref='option', lazy=True)
+
+
+class Vote(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    poll_id = db.Column(db.Integer, db.ForeignKey('poll.id'), nullable=False)
+    option_id = db.Column(db.Integer, db.ForeignKey('option.id'), nullable=False)
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or not current_user.is_admin:
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# Формы
+class RegistrationForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired(), Length(min=3, max=150)])
+    password = PasswordField('Password', validators=[DataRequired(), Length(min=6)])
+    password2 = PasswordField('Repeat Password', validators=[DataRequired(), EqualTo('password')])
+    submit = SubmitField('Register')
+
+    def validate_username(self, username):
+        user = User.query.filter_by(username=username.data).first()
+        if user:
+            raise ValidationError('Username already exists.')
+
+
+class LoginForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired(), Length(min=3, max=150)])
+    password = PasswordField('Password', validators=[DataRequired()])
+    submit = SubmitField('Login')
+
+
+class PollForm(FlaskForm):
+    question = StringField('Question', validators=[DataRequired(), Length(max=500)])
+    image = FileField('Image', validators=[FileAllowed(ALLOWED_EXTENSIONS, 'Images only!')])
+    options = FieldList(StringField('Option', validators=[DataRequired(), Length(max=200)]), min_entries=2, max_entries=5)
+    submit = SubmitField('Create Poll')
+
+
+def create_poll_chart(poll):
+    labels = [option.text for option in poll.options]
+    votes = [len(option.votes) for option in poll.options]
+
+    plt.figure(figsize=(6, 4))
+    bars = plt.bar(labels, votes, color='skyblue')
+    plt.title('Poll Results')
+    plt.xlabel('Options')
+    plt.ylabel('Votes')
+    plt.ylim(0, max(votes + [1]) + 1)
+
+    for bar, vote in zip(bars, votes):
+        plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.1, str(vote), ha='center')
+
+    graph_folder = os.path.join(app.static_folder, 'graphs')
+    os.makedirs(graph_folder, exist_ok=True)
+    filename = f'poll_{poll.id}.png'
+    filepath = os.path.join(graph_folder, filename)
+    plt.tight_layout()
+    plt.savefig(filepath)
+    plt.close()
+    return filename
+
+
+# Роуты
+@app.route('/')
+def index():
+    polls = Poll.query.all()
+    return render_template('index.html', polls=polls)
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    form = RegistrationForm()
+    if form.validate_on_submit():
+        user = User(username=form.username.data)
+        user.set_password(form.password.data)
+        db.session.add(user)
+        db.session.commit()
+        flash('Registered successfully! Please log in.')
+        return redirect(url_for('login'))
+    return render_template('register.html', form=form)
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    form = LoginForm()
+    if form.validate_on_submit():
+        user = User.query.filter_by(username=form.username.data).first()
+        if user and user.check_password(form.password.data):
+            login_user(user)
+            flash('Logged in successfully!')
+            return redirect(url_for('index'))
+        else:
+            flash('Invalid username or password.')
+    return render_template('login.html', form=form)
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('Logged out.')
+    return redirect(url_for('index'))
+
+
+@app.route('/create', methods=['GET', 'POST'])
+@login_required
+def create_poll():
+    form = PollForm()
+    if form.validate_on_submit():
+        filename = None
+        if form.image.data:
+            file = form.image.data
+            if allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            else:
+                flash('Invalid image format.')
+                return redirect(request.url)
+
+        poll = Poll(question=form.question.data, image_filename=filename)
+        db.session.add(poll)
+        db.session.commit()
+        for option_text in form.options.data:
+            option = Option(text=option_text, poll_id=poll.id)
+            db.session.add(option)
+        db.session.commit()
+        flash('Poll created!')
+        return redirect(url_for('index'))
+    return render_template('create_poll.html', form=form)
+
+
+@app.route('/poll/<int:poll_id>', methods=['GET', 'POST'])
+@login_required
+def poll_detail(poll_id):
+    poll = Poll.query.get_or_404(poll_id)
+    voted = Vote.query.filter_by(user_id=current_user.id, poll_id=poll_id).first()
+    if request.method == 'POST' and not voted:
+        option_id = request.form.get('option')
+        option = Option.query.filter_by(id=option_id, poll_id=poll_id).first()
+        if option:
+            vote = Vote(user_id=current_user.id, poll_id=poll_id, option_id=option.id)
+            db.session.add(vote)
+            db.session.commit()
+            flash('Vote submitted!')
+            return redirect(url_for('poll_detail', poll_id=poll_id))
+        else:
+            flash('Invalid option.')
+    votes_count = {option.id: len(option.votes) for option in poll.options}
+    total_votes = sum(votes_count.values())
+
+    chart_filename = None
+    if voted:
+        chart_filename = create_poll_chart(poll)
+
+    return render_template('poll_detail.html', poll=poll, voted=voted, votes_count=votes_count, total_votes=total_votes, chart_filename=chart_filename)
+
+
+# Админка
+@app.route('/admin')
+@admin_required
+def admin_index():
+    return render_template('admin/index.html')
+
+
+@app.route('/admin/polls')
+@admin_required
+def admin_polls():
+    polls = Poll.query.all()
+    return render_template('admin/polls.html', polls=polls)
+
+
+@app.route('/admin/polls/delete/<int:poll_id>', methods=['POST'])
+@admin_required
+def admin_delete_poll(poll_id):
+    poll = Poll.query.get_or_404(poll_id)
+    Vote.query.filter_by(poll_id=poll.id).delete()
+    Option.query.filter_by(poll_id=poll.id).delete()
+    db.session.delete(poll)
+    db.session.commit()
+    flash('Poll deleted.')
+    return redirect(url_for('admin_polls'))
+
+
+@app.route('/admin/users')
+@admin_required
+def admin_users():
+    users = User.query.all()
+    return render_template('admin/users.html', users=users)
+
+
+@app.route('/admin/users/delete/<int:user_id>', methods=['POST'])
+@admin_required
+def admin_delete_user(user_id):
+    user = User.query.get_or_404(user_id)
+    Vote.query.filter_by(user_id=user.id).delete()
+    db.session.delete(user)
+    db.session.commit()
+    flash('User deleted.')
+    return redirect(url_for('admin_users'))
+
+
+if __name__ == '__main__':
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    with app.app_context():
+        db.create_all()
+    app.run(debug=True)from app import app, db, User
+
+with app.app_context():
+    user = User.query.filter_by(username='soulboy228').first()
+    if user:
+        user.is_admin = True
+        db.session.commit()
+        print(f"User {user.username} is now admin.")
+    else:
+        print("User not found.")
+{% extends "layout.html" %}
+{% block content %}
+<h2>Create Poll</h2>
+<form method="POST" enctype="multipart/form-data">
+  {{ form.hidden_tag() }}
+  <div class="mb-3">
+    {{ form.question.label(class="form-label") }}
+    {{ form.question(class="form-control") }}
+    {% for error in form.question.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+  
+  <div class="mb-3">
+    {{ form.image.label(class="form-label") }}
+    {{ form.image(class="form-control") }}
+    {% for error in form.image.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+
+  <h5>Options</h5>
+  {% for option in form.options %}
+    <div class="mb-3">
+      {{ option.label }} {{ loop.index }}
+      {{ option(class="form-control") }}
+      {% for error in option.errors %}
+        <div class="text-danger">{{ error }}</div>
+      {% endfor %}
+    </div>
+  {% endfor %}
+  <button type="submit" class="btn btn-success">{{ form.submit.label.text }}</button>
+</form>
+{% endblock %}{% extends "layout.html" %}
+{% block content %}
+<h1>Available Polls</h1>
+<ul class="list-group">
+  {% for poll in polls %}
+    <li class="list-group-item d-flex justify-content-between align-items-center flex-column flex-md-row">
+      <div>
+        <a href="{{ url_for('poll_detail', poll_id=poll.id) }}">{{ poll.question }}</a>
+        {% if poll.image_filename %}
+          <div class="mt-2">
+            <img src="{{ url_for('static', filename='uploads/' ~ poll.image_filename) }}" alt="Poll Image" class="img-fluid" style="max-height:150px;">
+          </div>
+        {% endif %}
+      </div>
+      <span class="badge bg-primary rounded-pill align-self-center mt-2 mt-md-0">{{ poll.votes|length }} votes</span>
+    </li>
+  {% else %}
+    <li class="list-group-item">No polls yet.</li>
+  {% endfor %}
+</ul>
+{% endblock %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Polls App</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+  <div class="container">
+    <a class="navbar-brand" href="{{ url_for('index') }}">Polls App</a>
+    <div>
+      {% if current_user.is_authenticated %}
+        <span class="text-light me-3">Hello, {{ current_user.username }}!</span>
+        <a class="btn btn-outline-light btn-sm" href="{{ url_for('create_poll') }}">Create Poll</a>
+        <a class="btn btn-outline-light btn-sm ms-2" href="{{ url_for('logout') }}">Logout</a>
+      {% else %}
+        <a class="btn btn-outline-light btn-sm" href="{{ url_for('login') }}">Login</a>
+        <a class="btn btn-outline-light btn-sm ms-2" href="{{ url_for('register') }}">Register</a>
+      {% endif %}
+    </div>
+  </div>
+</nav>
+<div class="container">
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for msg in messages %}
+        <div class="alert alert-info">{{ msg }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</div>
+</body>
+</html>{% extends "layout.html" %}
+{% block content %}
+<h2>Login</h2>
+<form method="POST">
+  {{ form.hidden_tag() }}
+  <div class="mb-3">
+    {{ form.username.label(class="form-label") }}
+    {{ form.username(class="form-control") }}
+    {% for error in form.username.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+  <div class="mb-3">
+    {{ form.password.label(class="form-label") }}
+    {{ form.password(class="form-control") }}
+    {% for error in form.password.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+  <button type="submit" class="btn btn-primary">{{ form.submit.label.text }}</button>
+</form>
+{% endblock %}{% extends "layout.html" %}
+{% block content %}
+<h2>{{ poll.question }}</h2>
+{% if poll.image_filename %}
+  <img src="{{ url_for('static', filename='uploads/' ~ poll.image_filename) }}" alt="Poll Image" class="img-fluid mb-3" style="max-height:300px;">
+{% endif %}
+
+{% if voted %}
+  <h4>Results:</h4>
+  <ul class="list-group mb-3">
+    {% for option in poll.options %}
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        {{ option.text }}
+        <span class="badge bg-primary rounded-pill">
+          {{ votes_count.get(option.id, 0) }} votes
+          ({{ '%.1f' % ((votes_count.get(option.id, 0) / total_votes * 100) if total_votes else 0) }}%)
+        </span>
+      </li>
+    {% endfor %}
+  </ul>
+
+  {% if chart_filename %}
+    <h5>Graph:</h5>
+    <img src="{{ url_for('static', filename='graphs/' ~ chart_filename) }}" alt="Poll Results Graph" class="img-fluid mb-3">
+  {% endif %}
+{% else %}
+  <form method="POST">
+    {% for option in poll.options %}
+      <div class="form-check">
+        <input class="form-check-input" type="radio" name="option" id="option{{ option.id }}" value="{{ option.id }}" required>
+        <label class="form-check-label" for="option{{ option.id }}">
+          {{ option.text }}
+        </label>
+      </div>
+    {% endfor %}
+    <button type="submit" class="btn btn-primary mt-3">Vote</button>
+  </form>
+{% endif %}
+
+<a href="{{ url_for('index') }}" class="btn btn-secondary mt-3">Back to Polls</a>
+{% endblock %}{% extends "layout.html" %}
+{% block content %}
+<h2>{{ _('User Profile') }}</h2>
+
+<p><strong>{{ _('Username:') }}</strong> {{ current_user.username }}</p>
+
+<h3>{{ _('Change Password') }}</h3>
+<form method="POST">
+  {{ form.hidden_tag() }}
+
+  <div class="mb-3">
+    {{ form.old_password.label(class="form-label") }}
+    {{ form.old_password(class="form-control") }}
+    {% for error in form.old_password.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+
+  <div class="mb-3">
+    {{ form.new_password.label(class="form-label") }}
+    {{ form.new_password(class="form-control") }}
+    {% for error in form.new_password.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+
+  <div class="mb-3">
+    {{ form.new_password2.label(class="form-label") }}
+    {{ form.new_password2(class="form-control") }}
+    {% for error in form.new_password2.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+
+  <button type="submit" class="btn btn-primary">{{ form.submit.label.text }}</button>
+</form>
+
+<hr>
+
+<h3>{{ _('Polls You Voted In') }}</h3>
+{% if polls_voted %}
+  <ul class="list-group">
+    {% for poll, option_text in polls_voted.items() %}
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        <a href="{{ url_for('poll_detail', poll_id=poll.id) }}">{{ poll.question }}</a>
+        <span class="badge bg-secondary">{{ option_text }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p>{{ _('You have not voted in any polls yet.') }}</p>
+{% endif %}
+
+{% endblock %}
+{% extends "layout.html" %}
+{% block content %}
+<h2>Register</h2>
+<form method="POST">
+  {{ form.hidden_tag() }}
+  <div class="mb-3">
+    {{ form.username.label(class="form-label") }}
+    {{ form.username(class="form-control") }}
+    {% for error in form.username.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+  <div class="mb-3">
+    {{ form.password.label(class="form-label") }}
+    {{ form.password(class="form-control") }}
+    {% for error in form.password.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+  <div class="mb-3">
+    {{ form.password2.label(class="form-label") }}
+    {{ form.password2(class="form-control") }}
+    {% for error in form.password2.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+  <button type="submit" class="btn btn-primary">{{ form.submit.label.text }}</button>
+</form>
+{% endblock %}
