@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 {% block content %}
 <h2>Create Poll</h2>
-<form method="POST">
+<form method="POST" enctype="multipart/form-data">
   {{ form.hidden_tag() }}
   <div class="mb-3">
     {{ form.question.label(class="form-label") }}
@@ -10,6 +10,15 @@
       <div class="text-danger">{{ error }}</div>
     {% endfor %}
   </div>
+  
+  <div class="mb-3">
+    {{ form.image.label(class="form-label") }}
+    {{ form.image(class="form-control") }}
+    {% for error in form.image.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+
   <h5>Options</h5>
   {% for option in form.options %}
     <div class="mb-3">

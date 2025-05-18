@@ -1,20 +1,32 @@
+import os
 from flask import Flask, render_template, redirect, url_for, flash, request, abort
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user, UserMixin
 from flask_wtf import FlaskForm
+from flask_wtf.file import FileField, FileAllowed
+from werkzeug.utils import secure_filename
 from wtforms import StringField, PasswordField, SubmitField, FieldList
 from wtforms.validators import DataRequired, Length, EqualTo, ValidationError
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 
+# Конфигурация загрузки файлов
+UPLOAD_FOLDER = os.path.join('static', 'uploads')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key_here'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///polls.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
+
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 # Модели
@@ -35,6 +47,7 @@ class User(UserMixin, db.Model):
 class Poll(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     question = db.Column(db.String(500), nullable=False)
+    image_filename = db.Column(db.String(300))
     options = db.relationship('Option', backref='poll', lazy=True)
     votes = db.relationship('Vote', backref='poll', lazy=True)
 
@@ -58,7 +71,6 @@ def load_user(user_id):
     return User.query.get(int(user_id))
 
 
-# Декоратор для проверки админа
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -89,6 +101,7 @@ class LoginForm(FlaskForm):
 
 class PollForm(FlaskForm):
     question = StringField('Question', validators=[DataRequired(), Length(max=500)])
+    image = FileField('Image', validators=[FileAllowed(ALLOWED_EXTENSIONS, 'Images only!')])
     options = FieldList(StringField('Option', validators=[DataRequired(), Length(max=200)]), min_entries=2, max_entries=5)
     submit = SubmitField('Create Poll')
 
@@ -140,7 +153,17 @@ def logout():
 def create_poll():
     form = PollForm()
     if form.validate_on_submit():
-        poll = Poll(question=form.question.data)
+        filename = None
+        if form.image.data:
+            file = form.image.data
+            if allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            else:
+                flash('Invalid image format.')
+                return redirect(request.url)
+
+        poll = Poll(question=form.question.data, image_filename=filename)
         db.session.add(poll)
         db.session.commit()
         for option_text in form.options.data:
@@ -216,60 +239,9 @@ def admin_delete_user(user_id):
     flash('User deleted.')
     return redirect(url_for('admin_users'))
 
-from flask import jsonify
-
-@app.route('/api/polls', methods=['GET'])
-def api_get_polls():
-    polls = Poll.query.all()
-    result = []
-    for poll in polls:
-        result.append({
-            'id': poll.id,
-            'question': poll.question,
-            'options': [{'id': o.id, 'text': o.text} for o in poll.options]
-        })
-    return jsonify(result)
-
-
-@app.route('/api/polls/<int:poll_id>', methods=['GET'])
-def api_get_poll(poll_id):
-    poll = Poll.query.get_or_404(poll_id)
-    result = {
-        'id': poll.id,
-        'question': poll.question,
-        'options': [{'id': o.id, 'text': o.text} for o in poll.options],
-        'votes': {o.id: len(o.votes) for o in poll.options}
-    }
-    return jsonify(result)
-
-
-@app.route('/api/polls/<int:poll_id>/vote', methods=['POST'])
-def api_vote(poll_id):
-    data = request.get_json()
-    user_id = data.get('user_id')
-    option_id = data.get('option_id')
-
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({'error': 'User not found'}), 404
-
-    poll = Poll.query.get_or_404(poll_id)
-    option = Option.query.filter_by(id=option_id, poll_id=poll_id).first()
-    if not option:
-        return jsonify({'error': 'Invalid option'}), 400
-
-    existing_vote = Vote.query.filter_by(user_id=user_id, poll_id=poll_id).first()
-    if existing_vote:
-        return jsonify({'error': 'User already voted'}), 400
-
-    vote = Vote(user_id=user_id, poll_id=poll_id, option_id=option_id)
-    db.session.add(vote)
-    db.session.commit()
-    return jsonify({'message': 'Vote recorded'})
-
-
 
 if __name__ == '__main__':
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     with app.app_context():
         db.create_all()
     app.run(debug=True)
