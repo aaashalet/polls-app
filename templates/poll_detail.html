@@ -18,6 +18,11 @@
       </li>
     {% endfor %}
   </ul>
+
+  {% if chart_filename %}
+    <h5>Graph:</h5>
+    <img src="{{ url_for('static', filename='graphs/' ~ chart_filename) }}" alt="Poll Results Graph" class="img-fluid mb-3">
+  {% endif %}
 {% else %}
   <form method="POST">
     {% for option in poll.options %}

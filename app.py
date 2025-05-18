@@ -1,4 +1,5 @@
 import os
+import matplotlib.pyplot as plt
 from flask import Flask, render_template, redirect, url_for, flash, request, abort
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user, UserMixin
@@ -106,6 +107,30 @@ class PollForm(FlaskForm):
     submit = SubmitField('Create Poll')
 
 
+def create_poll_chart(poll):
+    labels = [option.text for option in poll.options]
+    votes = [len(option.votes) for option in poll.options]
+
+    plt.figure(figsize=(6, 4))
+    bars = plt.bar(labels, votes, color='skyblue')
+    plt.title('Poll Results')
+    plt.xlabel('Options')
+    plt.ylabel('Votes')
+    plt.ylim(0, max(votes + [1]) + 1)
+
+    for bar, vote in zip(bars, votes):
+        plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.1, str(vote), ha='center')
+
+    graph_folder = os.path.join(app.static_folder, 'graphs')
+    os.makedirs(graph_folder, exist_ok=True)
+    filename = f'poll_{poll.id}.png'
+    filepath = os.path.join(graph_folder, filename)
+    plt.tight_layout()
+    plt.savefig(filepath)
+    plt.close()
+    return filename
+
+
 # Роуты
 @app.route('/')
 def index():
@@ -193,7 +218,12 @@ def poll_detail(poll_id):
             flash('Invalid option.')
     votes_count = {option.id: len(option.votes) for option in poll.options}
     total_votes = sum(votes_count.values())
-    return render_template('poll_detail.html', poll=poll, voted=voted, votes_count=votes_count, total_votes=total_votes)
+
+    chart_filename = None
+    if voted:
+        chart_filename = create_poll_chart(poll)
+
+    return render_template('poll_detail.html', poll=poll, voted=voted, votes_count=votes_count, total_votes=total_votes, chart_filename=chart_filename)
 
 
 # Админка
