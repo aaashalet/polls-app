@@ -1,0 +1,33 @@
+{% extends "layout.html" %}
+{% block content %}
+<h2>{{ poll.question }}</h2>
+
+{% if voted %}
+  <h4>Results:</h4>
+  <ul class="list-group mb-3">
+    {% for option in poll.options %}
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        {{ option.text }}
+        <span class="badge bg-primary rounded-pill">
+          {{ votes_count.get(option.id, 0) }} votes
+          ({{ '%.1f' % ((votes_count.get(option.id, 0) / total_votes * 100) if total_votes else 0) }}%)
+        </span>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <form method="POST">
+    {% for option in poll.options %}
+      <div class="form-check">
+        <input class="form-check-input" type="radio" name="option" id="option{{ option.id }}" value="{{ option.id }}" required>
+        <label class="form-check-label" for="option{{ option.id }}">
+          {{ option.text }}
+        </label>
+      </div>
+    {% endfor %}
+    <button type="submit" class="btn btn-primary mt-3">Vote</button>
+  </form>
+{% endif %}
+
+<a href="{{ url_for('index') }}" class="btn btn-secondary mt-3">Back to Polls</a>
+{% endblock %}

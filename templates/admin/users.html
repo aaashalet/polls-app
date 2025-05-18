@@ -1,0 +1,27 @@
+{% extends "layout.html" %}
+{% block content %}
+<h1>All Users</h1>
+<table class="table">
+  <thead>
+    <tr><th>ID</th><th>Username</th><th>Admin</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    {% for user in users %}
+      <tr>
+        <td>{{ user.id }}</td>
+        <td>{{ user.username }}</td>
+        <td>{{ 'Yes' if user.is_admin else 'No' }}</td>
+        <td>
+          {% if not user.is_admin %}
+          <form method="POST" action="{{ url_for('admin_delete_user', user_id=user.id) }}" onsubmit="return confirm('Delete this user?');">
+            <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+          </form>
+          {% else %}
+            <em>Protected</em>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

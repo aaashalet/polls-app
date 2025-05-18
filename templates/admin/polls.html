@@ -1,0 +1,22 @@
+{% extends "layout.html" %}
+{% block content %}
+<h1>All Polls</h1>
+<table class="table">
+  <thead>
+    <tr><th>ID</th><th>Question</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    {% for poll in polls %}
+      <tr>
+        <td>{{ poll.id }}</td>
+        <td>{{ poll.question }}</td>
+        <td>
+          <form method="POST" action="{{ url_for('admin_delete_poll', poll_id=poll.id) }}" onsubmit="return confirm('Delete this poll?');">
+            <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

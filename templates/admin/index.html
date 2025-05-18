@@ -1,0 +1,8 @@
+{% extends "layout.html" %}
+{% block content %}
+<h1>Admin Panel</h1>
+<ul>
+  <li><a href="{{ url_for('admin_polls') }}">Manage Polls</a></li>
+  <li><a href="{{ url_for('admin_users') }}">Manage Users</a></li>
+</ul>
+{% endblock %}
